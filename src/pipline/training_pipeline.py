@@ -6,23 +6,22 @@ from src.components.data_ingestion import DataIngestion
 from src.components.data_validation import DataValidation
 from src.components.data_transformation import DataTransformation
 from src.components.model_trainer import ModelTrainer
-#from src.components.model_evaluation import ModelEvaluation
+from src.components.model_evaluation import ModelEvaluation
 #from src.components.model_pusher import ModelPusher
 
 from src.entity.config_entity import (DataIngestionConfig,
                                           DataValidationConfig,
                                           DataTransformationConfig,
-                                          ModelTrainerConfig)
-                                          #ModelEvaluationConfig,
+                                          ModelTrainerConfig,
+                                          ModelEvaluationConfig)
                                           #ModelPusherConfig)
                                           
 from src.entity.artifact_entity import (DataIngestionArtifact,
                                             DataValidationArtifact,
                                             DataTransformationArtifact,
-                                            ModelTrainerArtifact)
-                                            #ModelEvaluationArtifact,
+                                            ModelTrainerArtifact,
+                                            ModelEvaluationArtifact)
                                             #ModelPusherArtifact)
-
 
 
 class TrainPipeline:
@@ -31,11 +30,10 @@ class TrainPipeline:
         self.data_validation_config = DataValidationConfig()
         self.data_transformation_config = DataTransformationConfig()
         self.model_trainer_config = ModelTrainerConfig()
-        #self.model_evaluation_config = ModelEvaluationConfig()
+        self.model_evaluation_config = ModelEvaluationConfig()
         #self.model_pusher_config = ModelPusherConfig()
 
 
-    
     def start_data_ingestion(self) -> DataIngestionArtifact:
         """
         This method of TrainPipeline class is responsible for starting data ingestion component
@@ -43,8 +41,8 @@ class TrainPipeline:
         try:
             logging.info("Entered the start_data_ingestion method of TrainPipeline class")
             logging.info("Getting the data from mongodb")
-            data_ingestion = DataIngestion(data_ingestion_config=self.data_ingestion_config)      #Data MongoDB ke kis collection se lena hai?", "File kaha save karni hai?"
-            data_ingestion_artifact = data_ingestion.initiate_data_ingestion()        #MongoDB se data fetch karta hai || .csv me feature store banata hai || Train/test split karta hai || Train aur test file ka path ek artifact object me return karta hai
+            data_ingestion = DataIngestion(data_ingestion_config=self.data_ingestion_config)      
+            data_ingestion_artifact = data_ingestion.initiate_data_ingestion()        
             logging.info("Got the train_set and test_set from mongodb")
             logging.info("Exited the start_data_ingestion method of TrainPipeline class")
             return data_ingestion_artifact
@@ -52,7 +50,6 @@ class TrainPipeline:
             raise MyException(e, sys) from e
         
 
-            
     def start_data_validation(self, data_ingestion_artifact: DataIngestionArtifact) -> DataValidationArtifact:
         """
         This method of TrainPipeline class is responsible for starting data validation component
@@ -87,38 +84,55 @@ class TrainPipeline:
             raise MyException(e, sys)
         
 
-    def start_model_trainer(self, data_transformation_artifact: DataTransformationArtifact) -> ModelTrainerArtifact:                                                                                     #Ye ek method hai, jo kisi class ke andar likha gaya hai (most probably TrainPipeline class mein).|| data_transformation_artifact:Ye woh artifact hai jo Data Transformation component se output mein aaya tha (transformed train-test arrays aur preprocessing object ka path).
+    def start_model_trainer(self, data_transformation_artifact: DataTransformationArtifact) -> ModelTrainerArtifact:
         """
         This method of TrainPipeline class is responsible for starting model training
         """
         try:
-            # Ek ModelTrainer object ready ho gaya training ke liye.
-            model_trainer = ModelTrainer(data_transformation_artifact=data_transformation_artifact,                                                       #Yahan ek ModelTrainer class ka object banaya gaya hai: || data_transformation_artifact: pass kar diya jo input mein mila tha. || model_trainer_config: ek config object jo is TrainPipeline class ka attribute hai (yani self.model_trainer_config).
+            model_trainer = ModelTrainer(data_transformation_artifact=data_transformation_artifact,                                                      
                                          model_trainer_config=self.model_trainer_config
                                          )
-            model_trainer_artifact = model_trainer.initiate_model_trainer()                                                                         #Phir model_trainer object ka initiate_model_trainer() method call kiya:     ||       Ye andar jaake model train karega, model save karega, aur ek ModelTrainerArtifact banake return karega.
+            model_trainer_artifact = model_trainer.initiate_model_trainer()                                                                        
             return model_trainer_artifact
 
         except Exception as e:
             raise MyException(e, sys)
         
-
-    def run_pipeline(self, ) -> None:
+    def start_model_evaluation(self, data_ingestion_artifact: DataIngestionArtifact,
+                            model_trainer_artifact: ModelTrainerArtifact) -> ModelEvaluationArtifact:
         """
-        This method of TrainPipeline class is responsible for running complete pipeline
+        This method of TrainPipeline class is responsible for starting model evaluation
+        """
+        try:
+            model_evaluation = ModelEvaluation(
+                model_eval_config=self.model_evaluation_config,
+                data_ingestion_artifact=data_ingestion_artifact,
+                model_trainer_artifact=model_trainer_artifact
+            )
+            model_evaluation_artifact = model_evaluation.initiate_model_evaluation()
+            return model_evaluation_artifact
+        except Exception as e:
+            raise MyException(e, sys)
+
+
+    def run_pipeline(self) -> None:
+        """
+        This method runs the complete pipeline from data ingestion to model evaluation
         """
         try:
             data_ingestion_artifact = self.start_data_ingestion()
             data_validation_artifact = self.start_data_validation(data_ingestion_artifact=data_ingestion_artifact)
             data_transformation_artifact = self.start_data_transformation(
-               data_ingestion_artifact=data_ingestion_artifact, data_validation_artifact=data_validation_artifact)
+                data_ingestion_artifact=data_ingestion_artifact,
+                data_validation_artifact=data_validation_artifact
+            )
             model_trainer_artifact = self.start_model_trainer(data_transformation_artifact=data_transformation_artifact)
-            #model_evaluation_artifact = self.start_model_evaluation(data_ingestion_artifact=data_ingestion_artifact,
-            #                                                        model_trainer_artifact=model_trainer_artifact)
-            #if not model_evaluation_artifact.is_model_accepted:
-            #    logging.info(f"Model not accepted.")
-            #    return None
-            #model_pusher_artifact = self.start_model_pusher(model_evaluation_artifact=model_evaluation_artifact)
-            
+            model_evaluation_artifact = self.start_model_evaluation(
+                data_ingestion_artifact=data_ingestion_artifact,
+                model_trainer_artifact=model_trainer_artifact
+            )
+            # Optionally, you can log the results of model evaluation or further use it.
+            logging.info(f"Model Evaluation Results: {model_evaluation_artifact}")
+        
         except Exception as e:
             raise MyException(e, sys)
